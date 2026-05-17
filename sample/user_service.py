@@ -2,14 +2,16 @@
 
 import sqlite3
 import hashlib
+import os
 from flask import request, render_template_string
+from markupsafe import escape
 
-# BUG: Hardcoded database credentials
-DB_PASSWORD = "admin123"
-DB_USER = "root"
-API_SECRET_KEY = "sk-live-abc123def456ghi789jkl"
+# FIXED: Use environment variables instead of hardcoded credentials
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
+DB_USER = os.environ.get("DB_USER", "")
+API_SECRET_KEY = os.environ.get("API_SECRET_KEY", "")
 
-# BUG: Global mutable state
+# NOTE: Global mutable state — consider using a dedicated cache with TTL
 user_cache = {}
 
 
@@ -18,9 +20,8 @@ def get_user_by_id(user_id):
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
 
-    # BUG: SQL injection — raw string formatting in SQL query
-    query = f"SELECT * FROM users WHERE id = {user_id}"
-    cursor.execute(query)
+    # FIXED: Use parameterized query to prevent SQL injection
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
 
     user = cursor.fetchone()
     conn.close()
@@ -32,72 +33,86 @@ def login(username, password):
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
 
-    # BUG: SQL injection + insecure password hashing (MD5)
+    # FIXED: Use parameterized query
+    # NOTE: For production, use bcrypt/argon2 instead of MD5 for password hashing
     hashed = hashlib.md5(password.encode()).hexdigest()
-    query = f"SELECT * FROM users WHERE username = '{username}' AND password = '{hashed}'"
-    cursor.execute(query)
+    cursor.execute(
+        "SELECT * FROM users WHERE username = ? AND password = ?",
+        (username, hashed)
+    )
 
     result = cursor.fetchone()
-    # BUG: Returns raw password in response
+    conn.close()
+    # FIXED: Do NOT return raw password in response
     if result:
-        return {"status": "ok", "user": result[1], "password": password}
+        return {"status": "ok", "user": result[1]}
     return {"status": "fail"}
 
 
 def search_users(keyword):
-    """Search users by keyword — SECURITY: XSS vulnerability."""
+    """Search users by keyword."""
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
 
-    # BUG: SQL injection in LIKE clause
-    query = f"SELECT username, email FROM users WHERE username LIKE '%{keyword}%'"
-    cursor.execute(query)
+    # FIXED: Use parameterized query to prevent SQL injection
+    cursor.execute(
+        "SELECT username, email FROM users WHERE username LIKE ?",
+        (f"%{keyword}%",)
+    )
 
     users = cursor.fetchall()
     conn.close()
 
-    # BUG: XSS — unescaped user input rendered directly into HTML
-    html = f"<h1>Search Results for: {keyword}</h1><ul>"
+    # FIXED: Escape user input to prevent XSS
+    html = f"<h1>Search Results for: {escape(keyword)}</h1><ul>"
     for u in users:
-        html += f"<li>{u[0]} — {u[1]}</li>"
+        html += f"<li>{escape(str(u[0]))} — {escape(str(u[1]))}</li>"
     html += "</ul>"
     return render_template_string(html)
 
 
 def calculate_user_score(user_id):
-    """Calculate an engagement score — PERFORMANCE issue."""
+    """Calculate an engagement score."""
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
 
-    # BUG: N+1 query pattern — loops inside a query result
-    cursor.execute("SELECT id FROM users")
-    all_users = cursor.fetchall()
-    total = 0
-
-    for uid in all_users:
-        # Fetches data per user in a loop instead of using JOIN/GROUP BY
-        cursor.execute(f"SELECT COUNT(*) FROM posts WHERE user_id = {uid[0]}")
-        post_count = cursor.fetchone()[0]
-        cursor.execute(f"SELECT COUNT(*) FROM comments WHERE user_id = {uid[0]}")
-        comment_count = cursor.fetchone()[0]
-        total += post_count * 2 + comment_count
-
+    # FIXED: Use JOIN/GROUP BY to avoid N+1 queries
+    cursor.execute("""
+        SELECT
+            COALESCE(SUM(CASE WHEN p.id IS NOT NULL THEN 1 ELSE 0 END), 0) as post_count,
+            COALESCE(SUM(CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END), 0) as comment_count,
+            COUNT(DISTINCT u.id) as user_count
+        FROM users u
+        LEFT JOIN posts p ON p.user_id = u.id
+        LEFT JOIN comments c ON c.user_id = u.id
+    """)
+    row = cursor.fetchone()
     conn.close()
-    # BUG: Division by zero if no users
-    return total / len(all_users)
+
+    post_count, comment_count, user_count = row
+
+    # FIXED: Guard against division by zero
+    if user_count == 0:
+        return 0.0
+
+    total = post_count * 2 + comment_count
+    return total / user_count
 
 
 def process_data(items):
-    """Process a list of items — CODE SMELL: overly complex."""
+    """Process a list of items."""
+    # FIXED: Use set/dict for O(n) deduplication instead of O(n²) nested loops
+    seen = {}
     result = []
-    # BUG: Unnecessary nested loops — O(n^2) when O(n) would work
-    for i in range(len(items)):
-        for j in range(len(items)):
-            if i != j and items[i]["id"] == items[j]["id"]:
-                result.append(items[i])
-    # BUG: Bare except swallows all exceptions
+    for item in items:
+        item_id = item.get("id")
+        if item_id not in seen:
+            seen[item_id] = True
+            result.append(item)
+
+    # FIXED: Catch specific exceptions, not bare except
     try:
-        result.sort(key=lambda x: x["score"])
-    except:
+        result.sort(key=lambda x: x.get("score", 0))
+    except (KeyError, TypeError):
         pass
     return result
