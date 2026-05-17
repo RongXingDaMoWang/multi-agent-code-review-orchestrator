@@ -1,20 +1,18 @@
 """
 Configuration for the Code Review Agent.
-All values can be overridden via environment variables.
+All values can be overridden via environment variables or .env file.
 
 Quick start:
-  export OPENAI_API_KEY=sk-...           # required
-  export OPENAI_MODEL=gpt-4o             # optional, default: gpt-4o
+  export OPENAI_API_KEY=sk-...           # required (Anthropic-compatible API key)
+  export OPENAI_MODEL=claude-sonnet-4-6  # optional
   export OPENAI_BASE_URL=https://...     # optional, for custom endpoints
   export GITHUB_TOKEN=ghp_...            # required for GitHub access
 
 Custom endpoint examples:
-  # Azure OpenAI
-  OPENAI_BASE_URL=https://<resource>.openai.azure.com/openai/deployments/<deployment>
-  # Local (Ollama)
-  OPENAI_BASE_URL=http://localhost:11434/v1  OPENAI_API_KEY=ollama
-  # DeepSeek / Qwen / other OpenAI-compatible APIs
-  OPENAI_BASE_URL=https://api.deepseek.com/v1
+  # DeepSeek Anthropic-compatible
+  OPENAI_BASE_URL=https://api.deepseek.com/anthropic
+  # Official Anthropic
+  OPENAI_BASE_URL=https://api.anthropic.com
 """
 import os
 from pathlib import Path
@@ -33,10 +31,10 @@ class Config:
     # LLM (OpenAI-compatible)
     OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")
     OPENAI_BASE_URL: str = os.environ.get("OPENAI_BASE_URL", "")
-    OPENAI_MODEL: str = os.environ.get("OPENAI_MODEL", "gpt-4o")
+    OPENAI_MODEL: str = os.environ.get("OPENAI_MODEL", "claude-sonnet-4-6")
     # Legacy alias
     ANTHROPIC_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")
-    ANTHROPIC_MODEL: str = os.environ.get("OPENAI_MODEL", "gpt-4o")
+    ANTHROPIC_MODEL: str = os.environ.get("OPENAI_MODEL", "claude-sonnet-4-6")
     THINKING_BUDGET: int = int(os.environ.get("THINKING_BUDGET", "8000"))
     MAX_TOKENS: int = int(os.environ.get("MAX_TOKENS", "16000"))
     ENABLE_THINKING: bool = os.environ.get("ENABLE_THINKING", "false").lower() != "false"

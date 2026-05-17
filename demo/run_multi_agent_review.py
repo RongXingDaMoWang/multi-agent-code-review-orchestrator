@@ -186,11 +186,11 @@ def run_dry_run_demo():
 def _ensure_stubs():
     """Install module stubs if real deps are not available."""
     try:
-        import openai  # noqa: F401
+        import anthropic  # noqa: F401
     except ImportError:
-        m = types.ModuleType("openai")
-        m.OpenAI = MagicMock
-        sys.modules["openai"] = m
+        m = types.ModuleType("anthropic")
+        m.Anthropic = MagicMock
+        sys.modules["anthropic"] = m
     try:
         import github  # noqa: F401
     except ImportError:
