@@ -1,0 +1,152 @@
+classDiagram
+    class ReviewOrchestrator {
+        -AgentRunner runner
+        -Path trajectories_dir
+        +review(pr_input: str) ReviewResult
+        +batch_review(pr_list: list, max_workers: int) list~ReviewResult~
+        +generate_health_report(repo: str) str
+    }
+    note for ReviewOrchestrator "🔴 面试重点: 工厂模式<br/>在 __init__ 中组装 LLMClient +<br/>ToolRouter + SkillLoader → AgentRunner<br/>batch_review 使用 ThreadPoolExecutor 并发"
+
+    class AgentRunner {
+        -LLMClient llm_client
+        -ToolRouter tool_router
+        -SkillLoader skill_loader
+        -Path trajectories_dir
+        -str system_prompt
+        -int MAX_ITERATIONS = 30
+        +run(task: str, pr: str, extra_context?: dict) AgentResult
+    }
+    note for AgentRunner "🔴 面试重点: Agent 主循环<br/>1. LLM 调用 → 2. 日志记录 →<br/>3. 检查 stop_reason →<br/>4. 执行 tool_use → 5. 追加结果<br/>🔴 安全限制: 最多 30 次迭代防无限循环<br/>🔴 决策提取: 正则解析 REQUEST_CHANGES/APPROVE/COMMENT"
+
+    class LLMClient {
+        -OpenAI client
+        -str model
+        -int max_tokens
+        +complete(messages: list, system?: str, tools?: list) LLMResponse
+        -_convert_tool_definitions(anthropic_tools: list) list
+        -_convert_messages(messages: list) list
+    }
+    note for LLMClient "🔴 面试重点: 协议适配层<br/>将 Anthropic 工具格式 ↔ OpenAI function-calling<br/>thinking block 在转换中丢弃（不传给 API）<br/>支持 OPENAI_BASE_URL 自定义端点"
+
+    class ToolRouter {
+        -GitHubTools _github
+        -MemoryTools _memory
+        -dict _dispatch
+        -set _write_tools
+        -int MAX_PATCH_CHARS = 3000
+        -int MAX_FILE_CONTENT_CHARS = 5000
+        +execute(tool_name: str, tool_input: dict) Any
+        +tool_definitions() list~dict~
+        -_truncate_result(tool_name: str, result: Any) Any
+    }
+    note for ToolRouter "🔴 设计模式: 策略模式<br/>_dispatch 字典: 工具名 → 可调用对象<br/>🔴 Dry-run 模式: 写操作返回模拟结果<br/>🔴 截断策略: patch > 3000 字符 / 文件 > 5000 字符<br/>防止 context window 溢出"
+
+    class SkillLoader {
+        -Path skills_dir
+        +load_skill(skill_name: str, include_references?: bool) str
+        +load_combined(*skill_names: str) str
+        -_strip_frontmatter(text: str) str
+    }
+    note for SkillLoader "🔴 面试重点<br/>从 skills/ 目录加载 Markdown 技能定义<br/>合并 references/ 子目录<br/>YAML frontmatter 自动剥离<br/>AgentRunner 用 load_combined 组合 5 个子技能"
+
+    class GitHubTools {
+        -Github _gh
+        +get_pull_request(owner, repo, pull_number) dict
+        +get_pull_request_files(owner, repo, pull_number) list~dict~
+        +list_commits(owner, repo, sha?, per_page?) list~dict~
+        +get_file_contents(owner, repo, path, branch?) dict
+        +create_pull_request_review(owner, repo, pull_number, event, body, comments?) dict
+        +create_branch(owner, repo, branch, from_branch?) dict
+        +create_or_update_file(owner, repo, path, content, message, branch, sha?) dict
+        +create_pull_request(owner, repo, title, head, base, body?) dict
+        +add_issue_comment(owner, repo, issue_number, body) dict
+        +get_pull_request_status(owner, repo, pull_number) dict
+        +detect_test_framework(owner, repo, branch?) dict
+    }
+
+    class MemoryTools {
+        +memory_get_all(max_tokens: int) str
+        +memory_add_pattern(name, description, severity, indicators?) dict
+        +memory_add_false_positive(pattern, reason, file_patterns?) dict
+        +memory_get_developer_profile(author: str) dict
+        +memory_update_developer_profile(author, new_issues?, strengths?, growth_areas?) dict
+        +memory_aggregate_patterns(repo, issues: list) dict
+    }
+
+    class TrajectoryLogger {
+        -file _file
+        -int _llm_calls
+        -int _tool_calls
+        -int _total_input_tokens
+        -int _total_output_tokens
+        +log_user_input(content: str) str
+        +log_assistant(response: LLMResponse) str
+        +log_tool_result(tool_use: ToolUseBlock, result: Any) str
+        +close(extra_stats?: dict) dict
+    }
+    note for TrajectoryLogger "🔴 上下文管理器<br/>with TrajectoryLogger(...) as logger:<br/>自动写入 session_start / session_end<br/>每次写入后 flush 保证实时持久化"
+
+    class LLMResponse {
+        +list content
+        +str stop_reason
+        +dict usage
+        +str model
+        +text() str
+        +tool_uses() list~ToolUseBlock~
+    }
+
+    class AgentResult {
+        +list messages
+        +str final_response
+        +str session_id
+        +dict stats
+    }
+
+    class ReviewResult {
+        +str pr
+        +str decision
+        +int issues_found
+        +int? fix_pr_number
+        +bool human_required
+        +str skip_reason
+        +str session_id
+        +dict stats
+        +str? error
+    }
+
+    class ToolUseBlock {
+        +str id
+        +str name
+        +dict input
+        +str type
+    }
+
+    class Config {
+        +str ANTHROPIC_API_KEY
+        +str ANTHROPIC_MODEL
+        +int THINKING_BUDGET
+        +int MAX_TOKENS
+        +bool ENABLE_THINKING
+        +str GITHUB_TOKEN
+        +Path TRAJECTORIES_DIR
+        +Path EXPORTS_DIR
+        +bool DRY_RUN
+        +int MAX_WORKERS
+    }
+    note for Config "🔴 单例模式（模块级全局）<br/>所有值支持环境变量覆盖<br/>注意: 变量名仍为 ANTHROPIC_*<br/>但实际使用 OpenAI SDK"
+
+    %% 关系
+    ReviewOrchestrator *-- AgentRunner : "组合 (在 __init__ 中创建)"
+    ReviewOrchestrator ..> ReviewResult : "返回"
+    AgentRunner *-- LLMClient : "组合 (注入)"
+    AgentRunner *-- ToolRouter : "组合 (注入)"
+    AgentRunner *-- SkillLoader : "组合 (注入)"
+    AgentRunner ..> TrajectoryLogger : "创建并使用"
+    AgentRunner ..> AgentResult : "返回"
+    ToolRouter *-- GitHubTools : "组合"
+    ToolRouter *-- MemoryTools : "组合"
+    LLMClient ..> LLMResponse : "返回"
+    LLMResponse *-- ToolUseBlock : "包含"
+    TrajectoryLogger ..> LLMResponse : "记录"
+    TrajectoryLogger ..> ToolUseBlock : "记录"

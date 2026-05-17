@@ -1,0 +1,81 @@
+graph TD
+    subgraph Entry["🎯 入口层"]
+        CLI["cli.py<br/>[CLI 入口: argparse 子命令路由]<br/>review / batch-review / export<br/>health-report / inspect"]
+    end
+
+    subgraph Pipeline["🔵 编排层 (Pipeline)"]
+        Orch["pipeline/orchestrator.py<br/>[ReviewOrchestrator: 四阶段流水线编排]<br/>- review(pr_input) → ReviewResult<br/>- batch_review(prs) → list[ReviewResult]<br/>- generate_health_report(repo) → str"]
+        PR["pipeline/__init__.py<br/>[导出: ReviewOrchestrator,<br/>ReviewResult, parse_pr_identifier]"]
+    end
+
+    subgraph Agent["🔵 Agent 核心层"]
+        Runner["agent/runner.py<br/>[AgentRunner: Agent 主循环<br/>最多 30 次迭代]"]
+        LLM["agent/llm_client.py<br/>[LLMClient: OpenAI 兼容 API<br/>Anthropic→OpenAI 格式转换]"]
+        Router["agent/tool_router.py<br/>[ToolRouter: 工具调度表<br/>dry-run 模式支持]"]
+        SkillLdr["agent/skill_loader.py<br/>[SkillLoader: 读取 SKILL.md<br/>合并 references/ 子文档]"]
+    end
+
+    subgraph Tools["🟡 工具层"]
+        GHTools["tools/github_tools.py<br/>[GitHubTools: PyGithub 封装<br/>11 个工具 + 11 个 Tool Definition]"]
+        MemTools["tools/memory_tools.py<br/>[MemoryTools: review_memory.jsonl CRUD<br/>6 个工具 + 内置规则]"]
+    end
+
+    subgraph Trajectory["🟢 轨迹层"]
+        TSchemas["trajectory/schemas.py<br/>[数据类: LLMResponse, AgentResult,<br/>ToolUseBlock, 各类 Record]"]
+        TLogger["trajectory/logger.py<br/>[TrajectoryLogger: JSONL 实时写入<br/>上下文管理器, session 统计]"]
+        TExport["trajectory/exporter.py<br/>[导出: SFT / Tool-Supervision<br/>/ Preference-Pairs (DPO)]"]
+    end
+
+    subgraph Skills["🟣 技能定义层 (Markdown)"]
+        direction LR
+        SkillMain["skills/code-review/<br/>SKILL.md<br/>[主 Skill: 完整流程路由]"]
+        SkillTriage["skills/code-review-triage/<br/>SKILL.md<br/>[Triage: PR 分类/硬规则]"]
+        SkillAnalyze["skills/code-review-analyze/<br/>SKILL.md<br/>[Analyze: 数据采集/Token 预算]"]
+        SkillAct["skills/code-review-act/<br/>SKILL.md<br/>[Act: Review + Fix PR +<br/>Memory 更新 + 测试生成]"]
+        SkillMem["skills/code-review-memory/<br/>SKILL.md<br/>[Memory: 知识图谱 CRUD]"]
+        SkillTest["skills/code-review-test-gen/<br/>SKILL.md<br/>[Test Gen: 自动生成单元测试]"]
+    end
+
+    subgraph Config["⚙️ 配置"]
+        CFG["config.py<br/>[Config: 环境变量映射<br/>LLM / GitHub / Paths / Execution]"]
+        Req["requirements.txt<br/>[openai, PyGithub]"]
+        ClaudeCfg[".claude/settings.local.json<br/>[权限 allowlist]"]
+    end
+
+    %% 依赖关系
+    CLI --> Orch
+    CLI --> TExport
+    CLI --> TSchemas
+    CLI --> SkillLdr
+
+    Orch --> Runner
+    Orch --> LLM
+    Orch --> Router
+    Orch --> SkillLdr
+    Orch --> GHTools
+    Orch --> MemTools
+
+    Runner --> LLM
+    Runner --> Router
+    Runner --> SkillLdr
+    Runner --> TLogger
+    Runner --> TSchemas
+
+    Router --> GHTools
+    Router --> MemTools
+
+    SkillLdr --> SkillMain
+    SkillLdr --> SkillTriage
+    SkillLdr --> SkillAnalyze
+    SkillLdr --> SkillAct
+    SkillLdr --> SkillMem
+
+    LLM -.-> TSchemas
+
+    style Entry fill:#ff6b6b,color:#fff
+    style Pipeline fill:#4ecdc4,color:#fff
+    style Agent fill:#45b7d1,color:#fff
+    style Tools fill:#f9ca24,color:#333
+    style Trajectory fill:#6ab04c,color:#fff
+    style Skills fill:#a29bfe,color:#fff
+    style Config fill:#dfe6e9,color:#333

@@ -1,0 +1,58 @@
+graph LR
+    subgraph Input["输入"]
+        A["👤 用户<br/>CLI 参数 / PR URL"]
+    end
+
+    subgraph Gateway["路由层"]
+        B["cli.py<br/>argparse 子命令路由<br/>格式: str → (owner, repo, #)"]
+    end
+
+    subgraph Orchestration["编排层"]
+        C["ReviewOrchestrator<br/>组装依赖, 调用 AgentRunner<br/>数据: ReviewResult (dataclass)"]
+    end
+
+    subgraph AgentCore["Agent 核心"]
+        D["AgentRunner<br/>Agent Loop 30次上限<br/>数据: messages list[dict]"]
+        E["LLMClient<br/>OpenAI SDK 调用<br/>格式: Anthropic blocks ↔ OpenAI"]
+    end
+
+    subgraph ToolLayer["工具层"]
+        F["ToolRouter<br/>dispatch table<br/>截断: 3000/5000 chars"]
+        G["GitHubTools<br/>PyGithub wrapper<br/>数据: dict from GitHub API"]
+        H["MemoryTools<br/>JSONL CRUD<br/>数据: dict from memory"]
+    end
+
+    subgraph External["外部系统"]
+        I["☁️ GitHub API<br/>REST / GraphQL<br/>数据: JSON"]
+        J["🤖 OpenAI API<br/>Chat Completions<br/>数据: JSON (request/response)"]
+    end
+
+    subgraph Storage["持久化"]
+        K["📁 trajectories/<br/>trace_{id}.jsonl<br/>格式: JSONL (每行一条 Record)"]
+        L["📁 ~/.claude/<br/>review_memory.jsonl<br/>格式: JSONL"]
+    end
+
+    subgraph Output["输出"]
+        M["📊 SFT 训练数据<br/>sft_train.jsonl"]
+        N["📊 Tool Supervision<br/>tool_supervision.jsonl"]
+        O["📊 DPO Pairs<br/>preference_pairs.jsonl"]
+        P["📋 终端输出<br/>Review 摘要"]
+    end
+
+    A -->|"str (PR 标识)"| B
+    B -->|"(owner, repo, pr_number)"| C
+    C -->|"task: str"| D
+    D -->|"messages: list[dict]"| E
+    D -->|"tool_name + input"| F
+    E -->|"ChatCompletion Request (JSON)"| J
+    J -->|"ChatCompletion Response (JSON)"| E
+    F -->|"method call"| G
+    F -->|"method call"| H
+    G -->|"REST API (JSON)"| I
+    I -->|"Response (JSON)"| G
+    H -->|"read/write"| L
+    D -->|"实时写入 JSONL"| K
+    K -->|"离线导出"| M
+    K -->|"离线导出"| N
+    K -->|"离线导出"| O
+    C -->|"ReviewResult"| P

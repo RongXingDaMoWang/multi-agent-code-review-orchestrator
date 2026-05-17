@@ -1,0 +1,45 @@
+sequenceDiagram
+    actor User as 👤 用户
+    participant CLI as cli.py
+    participant Orch as ReviewOrchestrator
+    participant Pool as ThreadPoolExecutor
+    participant Mem as MemoryTools
+
+    User->>CLI: python cli.py batch-review --prs prs.txt --workers 3
+
+    CLI->>CLI: 读取 prs.txt (跳过空行和 # 注释行)
+    Note over CLI: 解析出 N 个 PR 标识
+
+    CLI->>Orch: batch_review(pr_list, max_workers=3)
+
+    Orch->>Pool: ThreadPoolExecutor(max_workers=3)
+    Note over Pool: 🔴 面试重点: 并发控制<br/>每个 worker 创建独立的<br/>AgentRunner → LLM API 调用<br/>trajectory 文件按 session_id 隔离
+
+    par Worker 1
+        Pool->>Orch: review(pr_1)
+    and Worker 2
+        Pool->>Orch: review(pr_2)
+    and Worker 3
+        Pool->>Orch: review(pr_3)
+    end
+
+    Note over Pool: concurrent.futures.as_completed
+
+    Orch-->>CLI: list[ReviewResult]
+
+    CLI-->>User: ✓/✗ 统计输出
+
+    User->>CLI: python cli.py health-report --repo owner/repo
+
+    CLI->>Orch: generate_health_report("owner/repo")
+
+    Orch->>Mem: get_repo_patterns("owner/repo")
+    Note over Mem: 从 review_memory.jsonl<br/>加载 repo_pattern 类型记录
+
+    Mem-->>Orch: patterns list
+
+    Orch->>Orch: 按 severity 分组 (critical/high/medium/low)<br/>按 occurrence_count 降序排列<br/>统计 Top 10 受影响文件
+
+    Orch-->>CLI: Markdown 健康报告
+
+    CLI-->>User: 终端或文件输出报告

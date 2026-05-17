@@ -1,0 +1,51 @@
+sequenceDiagram
+    actor User as 👤 用户
+    participant CLI as cli.py<br/>cmd_export
+    participant SkillLdr as SkillLoader
+    participant Export as trajectory/exporter.py
+    participant FS as 📁 文件系统
+
+    User->>CLI: python cli.py export --input ./trajectories --format sft tool-supervision
+
+    CLI->>SkillLdr: load_skill("code-review")
+    Note over SkillLdr: 加载主 Skill 作为 system prompt<br/>用于 SFT 格式的 system 角色消息
+
+    SkillLdr-->>CLI: system_prompt (str)
+
+    CLI->>Export: export_directory(traces_dir, output_dir, system_prompt, formats)
+
+    loop 每个 trace_*.jsonl
+        Export->>FS: _load_trace(trace_file)
+        FS-->>Export: records list
+
+        Export->>Export: _get_session_meta(records)
+        Export->>Export: _get_session_stats(records)
+
+        alt SFT 格式
+            Export->>Export: export_sft(trace_file, system_prompt)
+            Note over Export: 🔴 转换: Anthropic 轨迹 → OpenAI SFT<br/>tool_use → assistant.tool_calls<br/>tool_result → tool role message<br/>thinking block 用 XML 标签包装
+
+            Export->>Export: _build_sft_messages_native(records, system_prompt)
+            Note over Export: 过滤: session_start/end 记录跳过<br/>只保留 user/assistant 消息
+
+            Export->>FS: write sft_train.jsonl
+        end
+
+        alt Tool-Supervision 格式
+            Export->>Export: export_tool_supervision(trace_file)
+            Note over Export: 🔴 提取: 每个 (tool_use → tool_result) 对<br/>作为独立训练样本<br/>用于训练 tool-calling 能力
+
+            Export->>FS: write tool_supervision.jsonl
+        end
+
+        alt Preference-Pairs (DPO) 格式
+            Export->>Export: export_preference_pairs(all_trace_files)
+            Note over Export: 🔴 DPO 配对策略:<br/>高质量: REQUEST_CHANGES + 较多 issues<br/>低质量: APPROVE/COMMENT + 较少 issues<br/>quality_score = decision权重 + issues*0.5<br/>best vs worst 配对
+
+            Export->>FS: write preference_pairs.jsonl
+        end
+    end
+
+    Export-->>CLI: counts per format
+
+    CLI-->>User: 终端输出导出统计

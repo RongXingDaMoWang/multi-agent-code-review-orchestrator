@@ -1,0 +1,72 @@
+erDiagram
+    SESSION ||--o{ TRACE_RECORD : "包含"
+    SESSION {
+        string session_id PK "uuid4().hex[:12]"
+        string pr "owner/repo#42"
+        string timestamp "ISO-8601 UTC"
+    }
+
+    TRACE_RECORD {
+        string uuid PK "uuid4()"
+        string parent_uuid FK "链式关联上一记录"
+        string type "session_start|user|assistant|session_end"
+        json content "消息体"
+    }
+
+    TRACE_RECORD ||--o{ ASSISTANT_CONTENT : "type=assistant 时包含"
+    ASSISTANT_CONTENT {
+        string stop_reason "end_turn|tool_use"
+        json usage "input_tokens, output_tokens"
+    }
+
+    ASSISTANT_CONTENT ||--o{ TOOL_USE_BLOCK : "包含"
+    TOOL_USE_BLOCK {
+        string id PK "toolu_xxx"
+        string name "get_pull_request|create_review|..."
+        json input "工具参数"
+    }
+
+    TOOL_USE_BLOCK ||--|| TOOL_RESULT_BLOCK : "产生"
+    TOOL_RESULT_BLOCK {
+        string tool_use_id FK "关联 tool_use.id"
+        json content "工具返回值 (JSON string)"
+    }
+
+    SESSION ||--|| SESSION_STATS : "结束时有"
+    SESSION_STATS {
+        int llm_calls "LLM 调用次数"
+        int tool_calls "工具调用次数"
+        int duration_ms "总耗时"
+        int total_input_tokens "输入 tokens 总和"
+        int total_output_tokens "输出 tokens 总和"
+        string decision "APPROVE|REQUEST_CHANGES|COMMENT"
+        int issues_found "发现的问题数"
+        int iterations "Agent 循环次数"
+    }
+
+    MEMORY_RECORD ||--o{ MEMORY_RECORD : "关联"
+    MEMORY_RECORD {
+        string type "known_pattern|false_positive|review_rule|fix_template|developer_profile|repo_pattern"
+        string id PK "type-date-random4"
+        string created_at "ISO-8601"
+        string updated_at "ISO-8601"
+        json content "根据 type 不同结构不同"
+    }
+
+    DEVELOPER_PROFILE {
+        string author "GitHub username"
+        list issue_history "[{category, count, last_seen}]"
+        list strengths "优点列表"
+        list growth_areas "成长领域"
+        int pr_count "累计 PR 数"
+    }
+
+    REPO_PATTERN {
+        string repo "owner/repo"
+        string pattern_name "severity:category"
+        string severity "critical|high|medium|low"
+        string category "security|bug|style|performance"
+        int occurrence_count "累计出现次数"
+        list affected_files "涉及文件"
+        string trend "new|stable|increasing"
+    }

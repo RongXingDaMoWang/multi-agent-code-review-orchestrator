@@ -1,0 +1,82 @@
+stateDiagram-v2
+    [*] --> 输入解析: 用户提交 PR 标识
+
+    输入解析 --> 硬规则检查: owner/repo/#42 解析成功
+    输入解析 --> [*]: 解析失败 → 返回错误
+
+    state 硬规则检查 {
+        [*] --> 变更行数检查: > 500 行?
+        变更行数检查 --> Breaking_Change检查: 标题含 BREAKING?
+        Breaking_Change检查 --> RFC检查: 标题含 RFC?
+        RFC检查 --> 安全文件检查: ≥3 个安全核心文件?
+        安全文件检查 --> Draft检查: PR 状态为 draft?
+        Draft检查 --> 通过硬规则: 全部未触发
+    }
+
+    硬规则检查 --> 需人工介入: 任一规则触发
+    硬规则检查 --> LLM分类: 通过硬规则
+
+    state LLM分类 {
+        [*] --> 语义分析: LLM classify
+        语义分析 --> 自动审查: confidence ≥ 0.6
+        语义分析 --> 需人工介入: confidence < 0.6
+    }
+
+    需人工介入 --> 添加PR评论: 说明跳过原因
+    添加PR评论 --> [*]: 流程结束
+
+    自动审查 --> 数据采集: 获取 diff/commits/memory
+
+    state 数据采集 {
+        [*] --> 并发获取PR信息: get_pull_request
+        并发获取PR信息 --> 并发获取文件: get_pull_request_files
+        并发获取文件 --> 并发获取提交: list_commits
+        并发获取提交 --> 并发获取规则: memory_get_all
+        并发获取规则 --> Token预算截断: 按 priority 截断 diff
+        Token预算截断 --> 获取开发者画像: memory_get_developer_profile
+    }
+
+    数据采集 --> LLM审查分析: AnalysisData 就绪
+
+    state LLM审查分析 {
+        [*] --> 安全漏洞扫描: 优先级 1
+        安全漏洞扫描 --> Bug检测: 优先级 2
+        Bug检测 --> 规范检查: 优先级 3
+        规范检查 --> 性能建议: 优先级 4
+        性能建议 --> 决策判断: 综合评分
+    }
+
+    LLM审查分析 --> APPROVE: 无问题
+    LLM审查分析 --> COMMENT: 仅有 medium/low 问题
+    LLM审查分析 --> REQUEST_CHANGES: 有 critical/high 问题
+    LLM审查分析 --> COMMENT: confidence < 0.6 (降级)
+
+    REQUEST_CHANGES --> 有可自动修复问题: auto_fixable 检查
+    APPROVE --> 更新Memory: 记录结果
+    COMMENT --> 有可自动修复问题: auto_fixable 检查
+
+    state 有可自动修复问题 {
+        [*] --> 创建修复分支: create_branch
+        创建修复分支 --> 写入修复代码: create_or_update_file
+        写入修复代码 --> 生成测试用例: detect_test_framework
+        生成测试用例 --> 创建FixPR: create_pull_request
+        创建FixPR --> 添加安全评论: CRITICAL 漏洞?
+    }
+
+    有可自动修复问题 --> 提交Review到GitHub: create_pull_request_review
+
+    state 提交Review到GitHub {
+        [*] --> 构建ReviewBody: Markdown 摘要
+        构建ReviewBody --> 构建内联评论: 逐条 issue 评论
+        构建内联评论 --> 调用API: create_review + comments
+    }
+
+    提交Review到GitHub --> 更新Memory
+
+    state 更新Memory {
+        [*] --> 更新开发者画像: memory_update_developer_profile
+        更新开发者画像 --> 聚合仓库模式: memory_aggregate_patterns
+        聚合仓库模式 --> 添加已知模式: memory_add_pattern (可选)
+    }
+
+    更新Memory --> [*]: 流程完成

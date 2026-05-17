@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "git": {
+      "command": "python",
+      "args": ["mcp_servers/git_mcp_server.py"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      },
+      "description": "GitHub API tools: pull requests, files, reviews, branches, commits, test-framework detection."
+    },
+    "memory": {
+      "command": "python",
+      "args": ["mcp_servers/memory_mcp_server.py"],
+      "description": "review_memory.jsonl operations: known patterns, false positives, developer profiles, repo-level aggregates."
+    },
+    "code_analysis": {
+      "command": "python",
+      "args": ["mcp_servers/code_analysis_mcp_server.py"],
+      "description": "Static analysis: cyclomatic complexity, regex-based security scan, Python function-signature extraction."
+    }
+  }
+}

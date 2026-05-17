@@ -1,0 +1,86 @@
+sequenceDiagram
+    actor User as 👤 用户
+    participant CLI as cli.py<br/>cmd_review
+    participant Orch as ReviewOrchestrator
+    participant Runner as AgentRunner
+    participant LLM as LLMClient<br/>(OpenAI API)
+    participant Router as ToolRouter
+    participant GH as GitHubTools<br/>(PyGithub)
+    participant Mem as MemoryTools
+    participant Logger as TrajectoryLogger
+    participant GitHub as ☁️ GitHub API
+
+    User->>CLI: python cli.py review owner/repo 42
+    Note over CLI: 解析命令行参数<br/>--dry-run / --no-thinking / --model
+
+    CLI->>Orch: ReviewOrchestrator(github_token, api_key, model, ...)
+    Note over Orch: 🔴 工厂组装: LLMClient + ToolRouter + SkillLoader → AgentRunner
+
+    CLI->>Orch: review("owner/repo 42")
+
+    Orch->>Orch: parse_pr_identifier("owner/repo 42")
+    Note over Orch: 正则解析 3 种格式:<br/>1. github.com/owner/repo/pull/42<br/>2. owner/repo #42<br/>3. owner/repo PR 42<br/>→ (owner, repo, pr_number)
+
+    Orch->>Runner: run(task="review owner/repo #42", pr="owner/repo#42")
+
+    Note over Runner: 🔴 Agent 主循环开始
+
+    Runner->>Runner: skill_loader.load_combined(<br/>"code-review", "code-review-triage",<br/>"code-review-analyze", "code-review-act",<br/>"code-review-memory")
+    Note over Runner: 合并 5 个 SKILL.md + references/*.md<br/>构建完整 system prompt
+
+    Runner->>Logger: new TrajectoryLogger(...)
+    Note over Logger: 写入 session_start 记录<br/>打开 trace_{session_id}.jsonl
+
+    Runner->>Logger: log_user_input(task)
+
+    loop 🔴 最多 30 次迭代 (Agent Loop)
+        Runner->>LLM: complete(messages, system, tools)
+        Note over LLM: 🔴 格式转换:<br/>Anthropic tool format → OpenAI function-calling<br/>thinking blocks 丢弃<br/>tool_result → role: "tool"
+
+        LLM->>GitHub: POST /v1/chat/completions
+        Note over LLM, GitHub: 🔴 面试重点: payload 大小日志<br/>~payload_size//4 tokens 估算
+
+        GitHub-->>LLM: ChatCompletion (finish_reason: stop|tool_calls)
+        LLM-->>Runner: LLMResponse(content, stop_reason, usage)
+
+        Runner->>Logger: log_assistant(response)
+        Note over Logger: 记录 llm_calls++, tokens 累计
+
+        alt stop_reason == "end_turn"
+            Note over Runner: 提取 final_text, 跳出循环
+        else stop_reason == "tool_use"
+            loop 每个 tool_use block
+                Runner->>Router: execute(tool_name, tool_input)
+
+                alt 写操作 && dry_run
+                    Router-->>Runner: {"dry_run": true, "message": "[DRY RUN] ..."}
+                else GitHub 工具
+                    Router->>GH: get_pull_request / get_files / ...
+                    GH->>GitHub: PyGithub API call
+                    GitHub-->>GH: Response
+                    GH-->>Router: dict result
+                    Note over Router: 🔴 截断: patch > 3000 / file > 5000
+                else Memory 工具
+                    Router->>Mem: memory_get_all / memory_update_profile / ...
+                    Mem-->>Router: dict result
+                end
+
+                Router-->>Runner: result (dict/str)
+                Runner->>Logger: log_tool_result(tool_use_block, result)
+                Note over Logger: tool_calls++, 写入 JSONL
+            end
+
+            Runner->>Runner: messages.append(assistant + tool_results)
+        end
+    end
+
+    Note over Runner: 🔴 决策提取 (正则):<br/>遍历所有 assistant 消息文本<br/>匹配 REQUEST_CHANGES/APPROVE/COMMENT<br/>解析 issues JSON 统计数量
+
+    Runner->>Logger: close(extra_stats={decision, issues_found, iterations})
+    Note over Logger: 写入 session_end → flush → close
+
+    Runner-->>Orch: AgentResult(messages, final_response, session_id, stats)
+
+    Orch-->>CLI: ReviewResult(pr, decision, issues_found, session_id, stats)
+
+    CLI-->>User: 终端输出 Review 摘要

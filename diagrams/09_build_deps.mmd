@@ -1,0 +1,18 @@
+graph LR
+    subgraph Runtime["运行时"]
+        Python["Python 3.13<br/>运行环境"]
+        OpenAI["openai >= 1.30<br/>LLM API 调用"]
+        PyGithub["PyGithub >= 2.1<br/>GitHub REST API"]
+    end
+
+    subgraph Dev["开发/测试"]
+        Pytest["pytest<br/>(test_all.py 使用<br/>unittest.mock)"]
+        Mock["unittest.mock<br/>单元测试 Mock"]
+    end
+
+    subgraph Skills["技能系统"]
+        Markdown["SKILL.md<br/>Markdown 格式<br/>技能定义 + 参考文档"]
+    end
+
+    Python --> OpenAI
+    Python --> PyGithub
