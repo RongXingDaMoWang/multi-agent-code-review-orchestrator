@@ -24,8 +24,18 @@ from code_review_agent.trajectory.exporter import export_directory
 from code_review_agent.trajectory.schemas import LLMResponse
 
 
+def _apply_feishu_flags(args) -> None:
+    """Set Feishu env vars from CLI flags (if provided)."""
+    if getattr(args, "feishu", False):
+        os.environ["FEISHU_ENABLED"] = "true"
+    if getattr(args, "feishu_chat_id", ""):
+        os.environ["FEISHU_CHAT_ID"] = args.feishu_chat_id
+
+
 def cmd_review(args) -> int:
     """Review a single PR."""
+    _apply_feishu_flags(args)
+
     # Build PR identifier from positional args or --pr flag
     if args.pr:
         pr_input = args.pr
@@ -90,6 +100,8 @@ def cmd_review(args) -> int:
 
 def cmd_batch_review(args) -> int:
     """Review multiple PRs from a file."""
+    _apply_feishu_flags(args)
+
     prs_file = Path(args.prs)
     if not prs_file.exists():
         print(f"Error: {prs_file} not found")
@@ -157,6 +169,8 @@ def cmd_export(args) -> int:
 
 def cmd_health_report(args) -> int:
     """Generate a health report for a repository based on accumulated review data."""
+    _apply_feishu_flags(args)
+
     repo = args.repo
     output_path = Path(args.output) if args.output else None
 
@@ -259,6 +273,8 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument("--trajectories-dir", default="./trajectories", help="Trajectories output dir")
     common.add_argument("--dry-run", action="store_true", help="Skip write operations (GitHub)")
     common.add_argument("--no-thinking", action="store_true", help="Disable Extended Thinking")
+    common.add_argument("--feishu", action="store_true", help="Push review results to Feishu group chat")
+    common.add_argument("--feishu-chat-id", default="", help="Feishu group chat ID (or set FEISHU_CHAT_ID)")
 
     subparsers = parser.add_subparsers(dest="command")
 

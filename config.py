@@ -49,3 +49,8 @@ class Config:
     # Execution
     DRY_RUN: bool = os.environ.get("DRY_RUN", "false").lower() == "true"
     MAX_WORKERS: int = int(os.environ.get("MAX_WORKERS", "1"))
+
+    # Feishu (Lark) integration
+    FEISHU_ENABLED: bool = os.environ.get("FEISHU_ENABLED", "").lower() in ("1", "true", "yes")
+    FEISHU_CHAT_ID: str = os.environ.get("FEISHU_CHAT_ID", "")
+    FEISHU_BOT_NAME: str = os.environ.get("FEISHU_BOT_NAME", "Code Review Agent")

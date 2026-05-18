@@ -105,6 +105,88 @@ python cli.py health-report --repo owner/repo
 python cli.py export --input ./trajectories --format sft tool-supervision
 ```
 
+## 飞书集成（Feishu Integration）
+
+Code Review 结果可自动推送到飞书群聊，支持 PR 审查摘要、开发者画像、健康报告三类消息。
+
+### 前置条件
+
+1. **安装 lark-cli**：
+   ```bash
+   npx @larksuite/cli
+   ```
+
+2. **创建飞书自建应用**：
+   - 在 [飞书开发者后台](https://open.feishu.cn) 创建应用
+   - 开通 `im:message:send_as_bot` 权限
+   - 发布应用并获取 App ID / App Secret
+
+3. **配置 lark-cli 认证**：
+   ```bash
+   lark-cli config init
+   ```
+   按交互式向导填入 App ID、App Secret 等信息。
+
+4. **将 Bot 添加到目标群聊**：
+   - 在飞书群设置中添加你创建的应用 Bot
+
+### 使用方式
+
+**方式一：环境变量**
+```bash
+export FEISHU_ENABLED=true
+export FEISHU_CHAT_ID=oc_xxxxxxxx
+export GITHUB_TOKEN=ghp_xxx
+export ANTHROPIC_API_KEY=sk-ant-xxx
+
+# 审查完成后自动推送结果到飞书群
+python cli.py review owner/repo 42 --mode multi
+```
+
+**方式二：CLI 参数**
+```bash
+python cli.py review owner/repo 42 --mode multi --feishu --feishu-chat-id oc_xxxxxxxx
+```
+
+### 推送的消息类型
+
+| 消息 | 触发时机 | 内容 |
+|------|---------|------|
+| **PR Review Summary** | 每次 review 完成后 | 决策（APPROVE/REQUEST_CHANGES）、严重度分布、各 Worker 分析结果、TOP 5 发现、建议 |
+| **Developer Profile** | 手动调用 `notify_review_result` 时 | 开发者 PR 数量、常见问题、强项、成长方向 |
+| **Health Report** | 手动调用 `send_health_report` 时 | 仓库问题模式统计、严重度分布、高频文件 |
+
+### 代码调用
+
+```python
+from code_review_agent.integrations.feishu_reporter import FeishuReporter, FeishuConfig
+
+config = FeishuConfig(enabled=True, chat_id="oc_xxx")
+reporter = FeishuReporter(config)
+
+# 发送审查摘要
+reporter.send_review_summary(
+    pr_label="owner/repo#42",
+    decision="REQUEST_CHANGES",
+    issues_found=8,
+    session_id="abc123",
+    stats={"severity_counts": {"critical": 2, "high": 3, "medium": 3}},
+    multi_agent={...},
+)
+
+# 发送开发者画像
+reporter.send_developer_profile(author="github-username")
+
+# 发送健康报告
+reporter.send_health_report(repo="owner/repo", report=markdown_report)
+```
+
+### 安全策略
+
+- 飞书推送是 **best-effort**：推送失败不会中断 Code Review 主流程
+- 所有 lark-cli 调用有 30 秒超时
+- 不会在日志中打印 chat_id 等敏感信息
+
 ## MCP Server 层
 
 将现有工具封装为独立 MCP Server，任何兼容 MCP 协议的 Agent 都能发现和调用：
@@ -225,6 +307,8 @@ code_review_agent/
 │   ├── code-review-act/
 │   ├── code-review-memory/
 │   └── code-review-test-gen/
+├── integrations/              # 外部服务集成（新增）
+│   └── feishu_reporter.py    # 飞书消息推送
 ├── tools/                    # 底层工具实现（未修改）
 │   ├── github_tools.py
 │   └── memory_tools.py
