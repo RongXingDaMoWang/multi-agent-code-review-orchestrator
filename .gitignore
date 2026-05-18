@@ -29,3 +29,4 @@ trajectories/
 exports/
 *.jsonl
 !mcp_servers/requirements.txt
+学习地图.md

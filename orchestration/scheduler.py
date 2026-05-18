@@ -22,7 +22,7 @@ class TaskScheduler:
     def __init__(
         self,
         max_concurrency: int = 3,
-        per_task_timeout_s: float = 60.0,
+        per_task_timeout_s: float = 300.0,
     ):
         self.max_concurrency = max_concurrency
         self.per_task_timeout_s = per_task_timeout_s

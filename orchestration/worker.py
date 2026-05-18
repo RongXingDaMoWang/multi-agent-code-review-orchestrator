@@ -109,7 +109,7 @@ class ScopedToolRouter:
 class _BoundedWorkerRunner(AgentRunner):
     """AgentRunner restricted to 10 iterations per Worker subtask."""
 
-    MAX_ITERATIONS = 10
+    MAX_ITERATIONS = 6
 
 
 class WorkerAgent:
