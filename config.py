@@ -28,7 +28,7 @@ except ImportError:
 
 
 class Config:
-    # LLM (OpenAI-compatible)
+    # LLM (Anthropic-compatible)
     OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")
     OPENAI_BASE_URL: str = os.environ.get("OPENAI_BASE_URL", "")
     OPENAI_MODEL: str = os.environ.get("OPENAI_MODEL", "claude-sonnet-4-6")
